@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-
+from analyzer import check_coin_status
 def fetch_ohlcv(coin):
     url = f"https://api.coingecko.com/api/v3/coins/{coin}/market_chart?vs_currency=usd&days=2&interval=hourly"
     response = requests.get(url)
