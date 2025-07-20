@@ -1,58 +1,42 @@
+# core.py
+
 import time
-import requests
-from analyzer import analyze_coin
+from datetime import datetime
 from storage import get_followed_coins
+from analyzer import check_coin_status
+from news_handler import fetch_crypto_news, analyze_news_item
 from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
-from news import get_latest_news
+import requests
+
+sent_news_links = set()
 
 def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-        response = requests.post(url, data=data)
-        return response.status_code == 200
+        requests.post(url, data=data)
     except Exception as e:
-        print(f"Telegram mesaj hatası: {e}")
-        return False
-
-def interpret_signal(analysis):
-    if analysis is None:
-        return None
-
-    rsi = analysis["rsi"]
-    macd_cross = analysis["macd_cross"]
-    price = analysis["price"]
-
-    if rsi < 30 and macd_cross:
-        return f"Acil Al❗️\nFiyat: {price} $\nRSI: {rsi} (Düşük)\nMACD: Al Sinyali"
-    elif rsi > 70 and not macd_cross:
-        return f"Acil Sat❗️\nFiyat: {price} $\nRSI: {rsi} (Yüksek)\nMACD: Sat Sinyali"
-    else:
-        return None
+        print(f"Telegram hatası: {e}")
 
 def run_bot():
-    last_news_sent = ""
-
     while True:
+        print(f"\n⏰ [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bot çalışıyor...")
+
         coins = get_followed_coins()
-
-        # 1. Coin analiz döngüsü
         for coin in coins:
-            try:
-                analysis = analyze_coin(coin)
-                signal = interpret_signal(analysis)
-                if signal:
-                    send_telegram_message(f"{coin.upper()} için sinyal:\n\n{signal}")
-            except Exception as e:
-                print(f"{coin} analiz hatası: {e}")
+            result = check_coin_status(coin)
+            if result:
+                send_telegram_message(result)
 
-        # 2. Haber kontrolü
-        try:
-            news = get_latest_news()
-            if news and news != last_news_sent:
-                send_telegram_message(f"📰 Haber Gelişmesi:\n\n{news}")
-                last_news_sent = news
-        except Exception as e:
-            print(f"Haber alınamadı: {e}")
+        news_items = fetch_crypto_news()
+        for news in news_items:
+            if news["url"] in sent_news_links:
+                continue
 
-        time.sleep(300)  # 5 dakika bekle (300 saniye)
+            analysis = analyze_news_item(news)
+            if analysis:
+                msg = f"📰 Haber Analizi ({news['published']}):\n{analysis}\n\n{news['title']}\n{news['url']}"
+                send_telegram_message(msg)
+                sent_news_links.add(news["url"])
+
+        time.sleep(300)  # 5 dakika
